@@ -12,7 +12,7 @@ pronunciation-cli-all uses dmenu to give a list of non-exact matches, which coul
 locate (any implementation), ffmpeg, yomi binary in PATH (see https://github.com/GenjiFujimoto/mecab-tools)
 
 ## Expected File format
-To enable a fast search, it expects the name of each audio file to be enclosed with dots '.' (audio_dir/.orange.mp3).
+To enable a fast search, it expects the name of each audio file to be enclosed with dots (eg. audio_dir/.猿.mp3).
 The reason for this was that the Japanese audio files I used, where in the format 'word_reading.ogg' (eg. 簡単_かんたん.ogg), so I used some sed
 to turn them into '.word.reading.ogg' which enables search for reading or word without any use of regular expressions.
 
