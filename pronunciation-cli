@@ -1,0 +1,45 @@
+#!/bin/sh
+
+# Dependencies: locate, ffmpeg, yomi binary (see https://github.com/GenjiFujimoto/mecab-tools)
+
+## Searches alternatingly for the input and a hiragana conversion of the input through the given sources in search_order
+## Alternatively one could only search for the input and if nothing found, rerun this script with the hiragana conversion passed
+
+# relies on locate, so the data has to be indexed with updatedb -U <folder with pronunciations> -o pronunciations.db
+database="$HOME/.local/share/databases/pronunciations.db"
+search_order=( "NHK accent" "poyotan" "skent" "straycat88" "strawberrybrown" "kaoring" "akitomo")
+alias loc='locate -d "$database"'
+
+searchWord=$(xclip -o || exit 1 | sed 's/^ *//; s/ *$//;')
+searchKana=$(yomi "$searchWord")
+
+# searching for exact matches
+allresults=$(loc ".${searchWord}.")
+allresultsKana=$(loc ".${searchKana}.")
+
+# Fallback to non exact matches
+if [[ -z "$allresults" && -z "$allresultsKana" ]]; then
+  allresults=$(loc "$searchWord")
+  allresultsKana=$(loc "$searchKana")
+fi
+
+# If stil empty exit
+if [[ -z "$allresults" && -z "$allresultsKana" ]]; then
+  notify-send "Nothing found for $searchWord or $searchKana"
+  exit 1
+fi
+
+# Cycle through search_order and grep first match
+for i in "${search_order[@]}"; do
+  file=$(grep -F -m 1 "$i" <<< "$allresults" || grep -F -m 1 "$i" <<< "$allresultsKana")
+  [ -n "$file" ] && break
+done
+
+# Using first result if nothing found from search_order
+[ -z "$file" ] && file=$(head -n 1 <<< $allresults)
+[ -z "$file" ] && file=$(head -n 1 <<< $allresultsKana)
+
+ffplay -fast -loglevel quiet -autoexit -nodisp "$file" &
+xclip -in -selection clipboard -target "text/uri-list" <<< "file://$file"
+notify-send "Copied audio file to clipboard"
+exit 0
