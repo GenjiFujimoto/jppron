@@ -1,7 +1,7 @@
 
 
 These are bash scripts used to play a pronunciation of selected Japanese text from a local database and copy the audio file to the system clipboard.
-I tried to minimize the latency as much as possible. The Exection speed is about 0.01-0.07s on my low end system.\
+I tried to minimize the latency as much as possible. The exection speed is about 0.01-0.07s on my low end system.\
 \
 pronunciation-cli searches through the search_order directories for the selected text and the hiragana conversion and plays the first match. If nothing was found
 it falls back to non-exact searches, so the pronunciation can also contain more than the searched text\
