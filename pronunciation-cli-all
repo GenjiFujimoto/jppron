@@ -17,5 +17,5 @@ selection="$(sed 's|^.*/pronunciations/||' <<< "$results" | awk '{ print length,
 
 file=$(grep -F -m 1 "$selection" <<< "$results")
 ffplay -loglevel quiet -autoexit -nodisp "$file"
-echo "file://$file" | xclip -in -selection clipboard -target "text/uri-list"
+xclip -in -selection clipboard -target "text/uri-list" <<< "file://$file"
 exit 0
