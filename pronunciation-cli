@@ -1,28 +1,14 @@
 #!/bin/sh
 
 pronunciation_folder="$HOME/.local/share/ajt_japanese_audio/"
-
-word=${1:-$(xclip -o)}
-
-extract_value() {
-	grep -m 1 -A 1 "\"$2\"" "$1" | tail +2 | tr -d '\n ",'
-}
+searchWord=${1:-$(xclip -o)}
+searchKana=$(yomi "$searchWord")
 
 while read -r index; do
-  pron_fn=$(extract_value "$index" "$word")
-  [ -n "$pron_fn" ] && break
+  findpron "$index" "$searchWord" "$searchKana" && exit 0
 done <<INPUT
 $(find "$pronunciation_folder" -maxdepth 2 -name "index.json")
 INPUT
 
-if [ -z "$pron_fn" ]; then
-  notify-send "Nothing found for $searchWord"
-  exit 1
-fi
-
-pron_fp="$(dirname "$index")/media/$pron_fn"
-
-ffplay -fast -loglevel quiet -autoexit -nodisp "$pron_fp" &
-echo "file://$pron_fp" | xclip -in -selection clipboard -target "text/uri-list"
-notify-send "Copied audio file to clipboard"
-wait
+# Resort back to old script
+forvoOLD "$searchWord"
