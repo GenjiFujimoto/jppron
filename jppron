@@ -1,14 +1,13 @@
 #!/bin/sh
 
 pronunciation_folder="$HOME/.local/share/ajt_japanese_audio/"
+search_depth=2
+
 searchWord=${1:-$(xclip -o)}
 searchKana=$(yomi "$searchWord")
 
 while read -r index; do
   findpron "$index" "$searchWord" "$searchKana" && exit 0
 done <<INPUT
-$(find "$pronunciation_folder" -maxdepth 2 -name "index.json")
+$(find "$pronunciation_folder" -maxdepth "$search_depth" -name "index.json")
 INPUT
-
-# Resort back to old script
-forvoOLD "$searchWord"
