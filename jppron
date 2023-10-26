@@ -4,7 +4,7 @@ pronunciation_folder="$HOME/.local/share/ajt_japanese_audio/"
 search_depth=2
 
 searchWord=${1:-$(xclip -o)}
-searchKana=$(yomi "$searchWord")
+searchKana=$(yomi "$searchWord" 2>/dev/null)
 
 while read -r index; do
   findpron "$index" "$searchWord" "$searchKana" && exit 0
