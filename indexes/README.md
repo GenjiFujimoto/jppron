@@ -1,6 +1,6 @@
 
 These are a couple indexes I created for the forvo files of the corresponding username.
-The kana reading is simple filled with the file name.
+The kana reading is simply filled with the file name.
 
 The expected folder structure is as follows:
 
