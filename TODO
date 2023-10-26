@@ -1,0 +1,4 @@
+
+
+- Use kana_reading instead of mecab
+- Deinflect (use code from dictpopup) or simply search in kana_reading for exact word and then play the corresponding word the audio file is belongs to
