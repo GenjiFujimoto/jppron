@@ -44,7 +44,7 @@ opendb(const char* path, bool readonly)
 	MDB_CHECK(mdb_env_open(env, path, 0, 0664));
 	MDB_CHECK(mdb_txn_begin(env, NULL, 0, &txn));
 	MDB_CHECK(mdb_dbi_open(txn, "head-file", MDB_DUPSORT | MDB_CREATE, &dbi1));
-	MDB_CHECK(mdb_dbi_open(txn, "file-info", MDB_DUPSORT | MDB_CREATE, &dbi2));
+	MDB_CHECK(mdb_dbi_open(txn, "file-info", MDB_CREATE, &dbi2));
     }
 }
 

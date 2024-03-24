@@ -53,17 +53,14 @@ const char json_typename[][16] = {
     [JSON_NULL] = "NULL",
 };
 
-typedef struct {
-    unsigned int with_o : 1;
-} settings;
+static s8
+build_path(s8 a, s8 b, s8 c)
+{
+    //TODO: Implement
+    return (s8){ 0 };
+}
 
-
-struct search_result {
-    char** filenames;
-    char** readings;
-};
-
-s8
+static s8
 build_audio_path(s8 indexdir, s8 audiofn)
 {
 #ifdef _WIN32
@@ -100,7 +97,7 @@ add_fileinfo(s8 fn, s8 kana_reading)
 }
 
 // wrapper for json api
-s8
+static s8
 json_get_string_(json_stream* json)
 {
     size_t slen = 0;
@@ -146,10 +143,6 @@ add_from_index(char* index_path)
 	    break;
 	}
 
-	/* printf("type: %s, val: %.*s, depth: %li, head: %i\n\n", */
-	/*        json_typename[type], (int)value.len, (char*)value.s, json_get_depth(s), */
-	/*        reading_headwords ? 1 : 0); */
-
 	if (type == JSON_ERROR)
 	{
 	    error_msg("%s", json_get_error(s));
@@ -163,7 +156,8 @@ add_from_index(char* index_path)
 		 && s8equals(value, s8("headwords")))
 	{
 	    reading_headwords = true;
-	    assert(json_next(s) == JSON_OBJECT);
+	    type = json_next(s);
+	    assert(type == JSON_OBJECT);
 	    continue;
 	}
 	else if (reading_headwords && type == JSON_STRING)
@@ -219,7 +213,8 @@ add_from_index(char* index_path)
 		 && s8equals(value, s8("files")))
 	{
 	    reading_files = true;
-	    assert(json_next(s) == JSON_OBJECT);
+	    type = json_next(s);
+	    assert(type == JSON_OBJECT);
 	    continue;
 	}
 	else if (reading_files && type == JSON_OBJECT_END)
@@ -228,7 +223,8 @@ add_from_index(char* index_path)
 	{
 	    s8 fn = s8dup(value);
 	    // TODO: Add check for audio filename ending (.ogg, .mp3, ...)
-	    assert(json_next(s) == JSON_OBJECT);
+	    type = json_next(s);
+	    assert(type == JSON_OBJECT);
 
 	    type = json_next(s);
 	    s8 prop = { 0 };
@@ -303,9 +299,8 @@ void
 jppron_create(char* audio_dir_path, char* database_path)
 {
     // TODO: Delete old db if existent
-
-    if(create_dir(database_path))
-	  fatal_perror("Creating directory");
+    if (create_dir(database_path))
+	fatal_perror("Creating directory");
 
     DIR* audio_dir = opendir(audio_dir_path);
     if (audio_dir == NULL)
@@ -335,6 +330,10 @@ jppron_create(char* audio_dir_path, char* database_path)
 
     closedb();
     closedir(audio_dir);
+
+    char* lock_file = g_build_filename(database_path, "lock.mdb", NULL);
+    remove(lock_file);
+    free(lock_file);
 }
 
 void
@@ -398,12 +397,14 @@ jppron(char* word, char* reading, char* audiopth)
 {
     char* dbpth = build_database_path();
 
-    if (access(dbpth, R_OK) != 0)
+    char* dbfile = g_build_filename(dbpth, "data.mdb", NULL);
+    if (access(dbfile, R_OK) != 0)
     {
 	msg("Indexing files..");
 	jppron_create(audiopth, dbpth);
 	msg("Index completed.");
     }
+    free(dbfile);
 
     play_word(word, reading, dbpth);
 
