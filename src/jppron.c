@@ -21,8 +21,6 @@
 #define access _access
 #endif
 
-#define DEFAULT_AUDIO_PATH "/home/daniel/.local/share/ajt_japanese_audio"
-
 s8 curdir = { 0 };
 
 static s8 buildpath(s8 a, s8 b)
@@ -417,12 +415,14 @@ jppron(char* word, char* reading, char* audiopth)
 int
 main(int argc, char** argv)
 {
+    char* default_audio_path = g_build_filename(g_get_user_data_dir(), "ajt_japanese_audio", NULL);
+
     if (argc < 2)
 	fatal("Usage: %s word", argc > 0 ? argv[0] : "jppron");
 
     if (strcmp(argv[1], "-c") == 0)
-	jppron_create(DEFAULT_AUDIO_PATH, build_database_path());
+	jppron_create(default_audio_path, build_database_path());
     else
-	jppron(argv[1], argc > 2 ? argv[2] : 0, DEFAULT_AUDIO_PATH);
+	jppron(argv[1], argc > 2 ? argv[2] : 0, default_audio_path);
 }
 #endif
