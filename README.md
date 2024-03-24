@@ -5,4 +5,5 @@ in the [ajatt audio format](https://github.com/Ajatt-Tools/nhk_2016_pronunciatio
 `sudo make install`
 
 ## Usage
-`jppron word [reading]`. The very first run might take a while, since it will create an index saved in $XDG_DATA_HOME/jppron/".
+`jppron word [reading]`. The very first run might take a while, since it will create an index saved in 
+`$XDG_DATA_HOME/jppron/`.
