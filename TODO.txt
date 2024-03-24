@@ -1,9 +1,12 @@
 
-- Filename -> Reading db should not allow duplicates
-- Database should be automatically created on first run / if not existant
-- Automatically recreate database if folder was modified? Or at least if a non-existent file was encountered
-
-- Check if there is some error handling needed if writing from 2 processes at the same time
+- Allow defining a sort order
+- Only add one pronunciation per index
+- Allow to filter trailing オ
 
 
 - Don't intertwine program logic with chosen database library too much
+
+- Check if there is some error handling needed if writing from 2 processes at the same time
+
+ideas:
+- Automatically recreate database if folder was modified? Or at least if a non-existent file was encountered
