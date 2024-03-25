@@ -21,23 +21,12 @@
 #define access _access
 #endif
 
-s8 curdir = { 0 };
-
-static s8 buildpath(s8 a, s8 b)
-{
-#ifdef _WIN32
-    s8 sep = s8("\\");
-#else
-    s8 sep = s8("/");
-#endif
-    size pathlen = a.len + sep.len + b.len;
-    s8 path = news8(pathlen);
-    s8 p = path;
-    p = s8copy(p, a);
-    p = s8copy(p, sep);
-    p = s8copy(p, b);
-    return path;
-}
+typedef struct {
+    s8 origin;
+    s8 hira_reading;
+    s8 pitch_number;
+    s8 pitch_pattern;
+} fileinfo;
 
 const char json_typename[][16] = {
     [JSON_ERROR] = "ERROR",
@@ -53,47 +42,53 @@ const char json_typename[][16] = {
     [JSON_NULL] = "NULL",
 };
 
-static s8
-build_path(s8 a, s8 b, s8 c)
+
+static void
+print_fileinfo(fileinfo fi)
 {
-    //TODO: Implement
-    return (s8){ 0 };
+    printf("Source: %.*s\nReading: %.*s\nPitch number: %.*s\nPitch pattern: %.*s\n",
+	   (int)fi.origin.len, (char*)fi.origin.s,
+	   (int)fi.hira_reading.len, (char*)fi.hira_reading.s,
+	   (int)fi.pitch_number.len, (char*)fi.pitch_number.s,
+	   (int)fi.pitch_pattern.len, (char*)fi.pitch_pattern.s);
+}
+
+static void
+freefileinfo(fileinfo fi[static 1])
+{
+    /* frees8(&fi->origin); */
+    frees8(&fi->hira_reading);
+    frees8(&fi->pitch_number);
+    frees8(&fi->pitch_pattern);
 }
 
 static s8
 build_audio_path(s8 indexdir, s8 audiofn)
 {
-#ifdef _WIN32
-    s8 sep = s8("\\");
-#else
-    s8 sep = s8("/");
-#endif
-    s8 media = s8("media");
-
-    size pathlen = indexdir.len + sep.len + media.len + sep.len + audiofn.len;
-    s8 path = news8(pathlen);
-    s8 p = path;
-    p = s8copy(p, indexdir);
-    p = s8copy(p, sep);
-    p = s8copy(p, media);
-    p = s8copy(p, sep);
-    s8copy(p, audiofn);
-    return path;
+    return buildpath(indexdir, s8("media"), audiofn);
 }
 
 static void
-add_filename(s8 headw, s8 fn)
+prints8(s8 z)
 {
-    s8 fullpth = build_audio_path(curdir, fn);
-    addtodb(1, headw, fullpth);
+    for (int i = 0; i < z.len; i++)
+	putchar((int)z.s[i]);
+    putchar('\n');
 }
 
 static void
-add_fileinfo(s8 fn, s8 kana_reading)
+add_filename(s8 headw, s8 fullpth)
 {
-    s8 fullpth = build_audio_path(curdir, fn);
-    s8 hira_reading = kata2hira(kana_reading);
-    addtodb(2, fullpth, hira_reading);
+    addtodb1(headw, fullpth);
+}
+
+static void
+add_fileinfo(s8 fullpth, fileinfo fi)
+{
+    s8 sep = s8("\0");
+    s8 data = s8concat(fi.origin, sep, fi.hira_reading, sep, fi.pitch_number, sep, fi.pitch_pattern);
+    addtodb2(fullpth, data);
+    frees8(&data);
 }
 
 // wrapper for json api
@@ -108,16 +103,21 @@ json_get_string_(json_stream* json)
 }
 
 static void
-add_from_index(char* index_path)
+add_from_index(char* index_path, s8 curdir)
 {
-    json_stream s[1];
     FILE* index = fopen(index_path, "r");
     if (!index)
 	fatal_perror("Opening index file");
+    json_stream s[1];
     json_open_stream(s, index);
 
+    s8 cursrc = { 0 };
+    s8 mediadir = { 0 };
+
+    bool reading_meta = false;
     bool reading_headwords = false;
     bool reading_files = false;
+
     enum json_type type;
     for (;;)
     {
@@ -150,26 +150,71 @@ add_from_index(char* index_path)
 	}
 	else if (type == JSON_DONE)
 	    break;
+
+	if (!reading_meta
+	    && json_get_depth(s) == 1
+	    && type == JSON_STRING
+	    && s8equals(value, s8("meta")))
+	{
+	    reading_meta = true;
+	    type = json_next(s);
+	    assert(type == JSON_OBJECT);
+	}
+	else if (reading_meta
+		 && json_get_depth(s) == 1
+		 && type == JSON_OBJECT_END)
+	{
+	    reading_meta = false;
+	}
+	else if (reading_meta)
+	{
+	    if (type == JSON_STRING)
+	    {
+		value = json_get_string_(s);
+		if (s8equals(value, s8("name")))
+		{
+		    type = json_next(s);
+		    assert(type == JSON_STRING);
+		    cursrc = s8dup(json_get_string_(s));
+		}
+		else if (s8equals(value, s8("media_dir")))
+		{
+		    type = json_next(s);
+		    assert(type == JSON_STRING);
+		    mediadir = s8dup(json_get_string_(s));
+		}
+		else
+		    json_skip(s);
+	    }
+	    else
+		json_skip(s);
+	}
 	else if (!reading_headwords
-		 && json_get_depth(s) <= 1
+		 && json_get_depth(s) == 1
 		 && type == JSON_STRING
 		 && s8equals(value, s8("headwords")))
 	{
 	    reading_headwords = true;
 	    type = json_next(s);
 	    assert(type == JSON_OBJECT);
-	    continue;
+	}
+	else if (reading_headwords
+		 && json_get_depth(s) == 1
+		 && type == JSON_OBJECT_END)
+	{
+	    reading_headwords = false;
 	}
 	else if (reading_headwords && type == JSON_STRING)
 	{
 	    s8 headword = s8dup(value);
-	    s8 fn = { 0 };
 
 	    type = json_next(s);
 	    if (type == JSON_STRING)
 	    {
-		fn = json_get_string_(s);
-		add_filename(headword, fn);
+		s8 fn = json_get_string_(s);
+		s8 fullpth = buildpath(curdir, mediadir, fn);
+		add_filename(headword, fullpth);
+		frees8(&fullpth);
 	    }
 	    else if (type == JSON_ARRAY)
 	    {
@@ -180,90 +225,107 @@ add_from_index(char* index_path)
 		{
 		    if (type == JSON_STRING)
 		    {
-			fn = json_get_string_(s);
-			add_filename(headword, fn);
+			s8 fn = json_get_string_(s);
+			s8 fullpth = buildpath(curdir, mediadir, fn);
+			add_filename(headword, fullpth);
+			frees8(&fullpth);
 		    }
 		    else
-		    {
 			error_msg("Encountered an unexpected type '%s', \
 				in file name array.", json_typename[type]);
-			json_skip_until(s, JSON_ARRAY_END);
-		    }
 
 		    type = json_next(s);
 		}
 	    }
 	    else
 		error_msg("Encountered unexpected type '%s' \
-				for filename.", json_typename[type]);
+				for filename of headword '%.*s'.",
+			  json_typename[type], (int)headword.len, (char*)headword.s);
 
-	    free(headword.s);
+	    frees8(&headword);
 	}
-	else if (reading_headwords && type == JSON_OBJECT_END)
-	    reading_headwords = false;
 	else if (reading_headwords) // Warning: Order is important
 	{
-	    debug_msg("Skipping value of type '%s' while reading headwords.", json_typename[type]);
+	    debug_msg("Skipping entry of type '%s' while reading headwords.", json_typename[type]);
 	    json_skip(s);
 	}
-	else if (!reading_headwords
-		 && !reading_files
-		 && json_get_depth(s) <= 1
+	else if (!reading_files
+		 && json_get_depth(s) == 1
 		 && type == JSON_STRING
 		 && s8equals(value, s8("files")))
 	{
 	    reading_files = true;
 	    type = json_next(s);
 	    assert(type == JSON_OBJECT);
-	    continue;
 	}
-	else if (reading_files && type == JSON_OBJECT_END)
+	else if (reading_files
+		 && json_get_depth(s) == 1
+		 && type == JSON_OBJECT_END)
+	{
+	    reading_files = false;
 	    break;
+	}
 	else if (reading_files && type == JSON_STRING)
 	{
-	    s8 fn = s8dup(value);
-	    // TODO: Add check for audio filename ending (.ogg, .mp3, ...)
-	    type = json_next(s);
-	    assert(type == JSON_OBJECT);
+	    // TODO: Add debug check for audio filename ending (.ogg, .mp3, ...)
+	    s8 fn = value;
+	    s8 fullpth = buildpath(curdir, mediadir, fn);
 
 	    type = json_next(s);
-	    s8 prop = { 0 };
-	    while (true)
+	    assert(type == JSON_OBJECT);
+	    type = json_next(s);
+	    fileinfo fi = { .origin = cursrc };
+	    while (type != JSON_OBJECT_END && type != JSON_DONE)
 	    {
 		if (type == JSON_STRING)
 		{
-		    prop = json_get_string_(s);
-		    if (s8equals(prop, s8("kana_reading")))
+		    value = json_get_string_(s);
+		    if (s8equals(value, s8("kana_reading")))
 		    {
-			json_next(s);
-			s8 kana_reading = { 0 };
-			kana_reading = json_get_string_(s);
-			add_fileinfo(fn, kana_reading);
-			break;
+			type = json_next(s);
+			assert(type == JSON_STRING);
+			fi.hira_reading = kata2hira(json_get_string_(s));
 		    }
+		    else if (s8equals(value, s8("pitch_number")))
+		    {
+			type = json_next(s);
+			assert(type == JSON_STRING);
+			fi.pitch_number = s8dup(json_get_string_(s));
+		    }
+		    else if (s8equals(value, s8("pitch_pattern")))
+		    {
+			type = json_next(s);
+			assert(type == JSON_STRING);
+			fi.pitch_pattern = s8dup(json_get_string_(s));
+		    }
+		    else
+			json_skip(s);
 		}
 		else if (type == JSON_ERROR)
 		{
 		    error_msg("%s", json_get_error(s));
 		    break;
 		}
-		else if (type == JSON_OBJECT_END || type == JSON_DONE)
-		{
-		    debug_msg("Could not find 'kana_reading' for filename '%.*s'", (int)fn.len, (char*)fn.s);
-		    break;
-		}
+		else
+		    json_skip(s);
 
-		json_skip(s);
 		type = json_next(s);
 	    }
-
 	    if (type != JSON_OBJECT_END)
 		json_skip_until(s, JSON_OBJECT_END);
 
-	    free(fn.s);
+	    add_fileinfo(fullpth, fi);
+	    freefileinfo(&fi);
+	    frees8(&fullpth);
+	}
+	else if (reading_files)
+	{
+	    debug_msg("Skipping entry of type '%s' while reading files.", json_typename[type]);
+	    json_skip(s);
 	}
     }
 
+    frees8(&cursrc);
     fclose(index);
     json_close(s);
 }
@@ -296,17 +358,17 @@ create_dir(char* dir_path)
 }
 
 void
-jppron_create(char* audio_dir_path, char* database_path)
+jppron_create(char* audio_dir_path, s8 database_path)
 {
     // TODO: Delete old db if existent
-    if (create_dir(database_path))
+    if (create_dir((char*)database_path.s))
 	fatal_perror("Creating directory");
 
-    DIR* audio_dir = opendir(audio_dir_path);
-    if (audio_dir == NULL)
+    DIR* audio_dir;
+    if ((audio_dir = opendir(audio_dir_path)) == NULL)
 	fatal_perror("Opening audio directory");
 
-    opendb(database_path, false);
+    opendb((char*)database_path.s, false);
 
     struct dirent *entry;
     while ((entry = readdir(audio_dir)) != NULL)
@@ -315,33 +377,61 @@ jppron_create(char* audio_dir_path, char* database_path)
 	    || strcmp(entry->d_name, "..") == 0)
 	    continue;
 
-	curdir = buildpath(fromcstr_(audio_dir_path), fromcstr_(entry->d_name));
+	s8 curdir = buildpath(fromcstr_(audio_dir_path), fromcstr_(entry->d_name));
 	s8 index_path = buildpath(curdir, s8("index.json"));
 	debug_msg("Processing path: %.*s", (int)curdir.len, (char*)curdir.s);
 
 	if (access((char*)index_path.s, F_OK) == 0)
-	    add_from_index((char*)index_path.s);
+	    add_from_index((char*)index_path.s, curdir);
 	else
 	    debug_msg("No index file found");
 
-	free(curdir.s);
-	free(index_path.s);
+	frees8(&curdir);
+	frees8(&index_path);
     }
 
     closedb();
     closedir(audio_dir);
 
-    char* lock_file = g_build_filename(database_path, "lock.mdb", NULL);
-    remove(lock_file);
-    free(lock_file);
+    s8 lock_file = buildpath(database_path, s8("lock.mdb"));
+    remove((char*)lock_file.s);
+    frees8(&lock_file);
 }
 
-void
-play_word(char* word, char* reading, char* database_path)
+static fileinfo
+getfileinfo(s8 fn)
+{
+    s8 data = getfromdb2(fn);
+
+    s8 d = data;
+
+    s8 data_split[4];
+    for (int i = 0; i < 3; i++)
+    {
+	data_split[i] = s8dup(fromcstr_((char*)d.s));
+
+	d.s += data_split[i].len + 1;
+	d.len -= data_split[i].len + 1;
+	assert(d.len >= 0);
+    }
+    data_split[3] = s8dup(d);
+
+    frees8(&data);
+
+    return (fileinfo){
+	       .origin = data_split[0],
+	       .hira_reading = data_split[1],
+	       .pitch_number = data_split[2],
+	       .pitch_pattern = data_split[3]
+    };
+}
+
+static void
+play_word(char* word, char* reading, s8 database_path)
 {
     s8 hira_reading = kata2hira(fromcstr_(reading));
 
-    opendb(database_path, true);
+    opendb((char*)database_path.s, true);
     s8* files = getfiles(fromcstr_(word));
 
     if (!files)
@@ -356,12 +446,14 @@ play_word(char* word, char* reading, char* database_path)
 	bool match = false;
 	for (size_t i = 0; i < buf_size(files); i++)
 	{
-	    s8 file_reading = getreading(files[i]);
-	    if (s8equals(hira_reading, file_reading))
+	    fileinfo fi = getfileinfo(files[i]);
+	    if (s8equals(hira_reading, fi.hira_reading))
 	    {
-		play_audio((char*)files[i].s);
+		print_fileinfo(fi);
+		play_audio(files[i].len, (char*)files[i].s);
 		match = true;
 	    }
+	    freefileinfo(&fi);
 	}
 	if (!match)
 	{
@@ -373,17 +465,23 @@ play_word(char* word, char* reading, char* database_path)
     {
 	// Play all
 	for (size_t i = 0; i < buf_size(files); i++)
-	    play_audio((char*)files[i].s);
+	{
+	    fileinfo fi = getfileinfo(files[i]);
+	    print_fileinfo(fi);
+	    freefileinfo(&fi);
+
+	    play_audio(files[i].len, (char*)files[i].s);
+	}
     }
 
     frees8buffer(files);
     closedb();
 }
 
-char*
+static s8
 build_database_path()
 {
-    return g_build_filename(g_get_user_data_dir(), "jppron", NULL);
+    return fromcstr_(g_build_filename(g_get_user_data_dir(), "jppron", NULL));
 }
 
 /**
@@ -395,31 +493,40 @@ build_database_path()
 void
 jppron(char* word, char* reading, char* audiopth)
 {
-    char* dbpth = build_database_path();
+    s8 dbpth = build_database_path();
 
-    char* dbfile = g_build_filename(dbpth, "data.mdb", NULL);
-    if (access(dbfile, R_OK) != 0)
+    s8 dbfile = buildpath(dbpth, s8("data.mdb"));
+    int no_access = access((char*)dbfile.s, R_OK);
+    frees8(&dbfile);
+
+    if (no_access)
     {
-	msg("Indexing files..");
-	jppron_create(audiopth, dbpth);
-	msg("Index completed.");
+	if (audiopth)
+	{
+	    msg("Indexing files..");
+	    jppron_create(audiopth, dbpth); // TODO: エラー処理
+	    msg("Index completed.");
+	}
+	else
+	{
+	    debug_msg("No (readable) database file and no audio path provided. Exiting..");
+	    return;
+	}
     }
-    free(dbfile);
 
     play_word(word, reading, dbpth);
 
-    g_free(dbpth);
+    frees8(&dbpth);
 }
-
 
 #ifdef INCLUDE_MAIN
 int
 main(int argc, char** argv)
 {
-    char* default_audio_path = g_build_filename(g_get_user_data_dir(), "ajt_japanese_audio", NULL);
-
     if (argc < 2)
 	fatal("Usage: %s word", argc > 0 ? argv[0] : "jppron");
+
+    char* default_audio_path = g_build_filename(g_get_user_data_dir(), "ajt_japanese_audio", NULL);
 
     if (strcmp(argv[1], "-c") == 0)
 	jppron_create(default_audio_path, build_database_path());

@@ -8,7 +8,7 @@ in the [ajatt audio format](https://github.com/Ajatt-Tools/nhk_2016_pronunciatio
 `jppron word [reading]`. The very first run might take a while, since it will create an index saved in 
 `$XDG_DATA_HOME/jppron/`. 
 
-Currently it is expecting the audio file directories to be stored at `$XDB_DATA_HOME/ajt_japanese_audio/`
+Currently it is expecting the audio file directories to be stored at `$XDG_DATA_HOME/ajt_japanese_audio/` (which is usually `~/.local/share/ajt_japanese_audio/`)
 with file structure:
 ```
 ├── ajt_japanese_audio

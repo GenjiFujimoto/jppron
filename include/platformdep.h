@@ -1,1 +1,1 @@
-void play_audio(char* filepath);
+void play_audio(int len, char filepath[len]);

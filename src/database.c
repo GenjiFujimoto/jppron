@@ -23,6 +23,8 @@ MDB_dbi dbi2 = 0;
 MDB_txn *txn = 0;
 bool READONLY = true;
 
+s8 last_added_key = { 0 };
+
 void
 opendb(const char* path, bool readonly)
 {
@@ -43,8 +45,8 @@ opendb(const char* path, bool readonly)
 	/* MDB_CHECK(mdb_env_open(env, path, MDB_WRITEMAP, 0664)); */
 	MDB_CHECK(mdb_env_open(env, path, 0, 0664));
 	MDB_CHECK(mdb_txn_begin(env, NULL, 0, &txn));
-	MDB_CHECK(mdb_dbi_open(txn, "head-file", MDB_DUPSORT | MDB_CREATE, &dbi1));
-	MDB_CHECK(mdb_dbi_open(txn, "file-info", MDB_CREATE, &dbi2));
+	MDB_CHECK(mdb_dbi_open(txn, "dbi1", MDB_DUPSORT | MDB_CREATE, &dbi1));
+	MDB_CHECK(mdb_dbi_open(txn, "dbi2", MDB_CREATE, &dbi2));
     }
 }
 
@@ -66,27 +68,80 @@ closedb()
 }
 
 void
-addtodb(size_t db_nr, s8 key, s8 val)
+addtodb1(s8 key, s8 val)
 {
-    MDB_dbi dbi = db_nr == 1 ? dbi1 : dbi2;
-    MDB_val key_s = { .mv_data = key.s, .mv_size = (size_t)key.len };
-    MDB_val val_s = { .mv_data = val.s, .mv_size = (size_t)val.len };
+    /* msg("Adding key: %.*s with value %.*s", (int)key.len, (char*)key.s, (int)val.len, (char*)val.s); */
+    MDB_val mdb_key = { .mv_data = key.s, .mv_size = (size_t)key.len };
+    MDB_val mdb_val = { .mv_data = val.s, .mv_size = (size_t)val.len };
 
-    /* printf("Adding key: %s with value: %s\n\n", key, val); */
-    rc = mdb_put(txn, dbi, &key_s, &val_s, 0);
-    if (rc != MDB_KEYEXIST)
+    rc = mdb_put(txn, dbi1, &mdb_key, &mdb_val, MDB_NOOVERWRITE);
+    if (rc == MDB_KEYEXIST)
+    {
+	if (s8equals(last_added_key, key))
+	{
+	    mdb_val = (MDB_val){ .mv_data = val.s, .mv_size = (size_t)val.len };
+	    rc = mdb_put(txn, dbi1, &mdb_key, &mdb_val, 0);
+	}
+
+	if (rc != MDB_KEYEXIST)
+	    MDB_CHECK(rc);
+    }
+    else
+	MDB_CHECK(rc);
+
+    if (rc == MDB_SUCCESS)
+    {
+	frees8(&last_added_key);
+	last_added_key = s8dup(key);
+    }
+}
+
+/*
+ * file -> fileinfo db
+ */
+void
+addtodb2(s8 key, s8 val)
+{
+    MDB_val mdb_key = { .mv_data = key.s, .mv_size = (size_t)key.len };
+    MDB_val mdb_val = { .mv_data = val.s, .mv_size = (size_t)val.len };
+
+    rc = mdb_put(txn, dbi2, &mdb_key, &mdb_val, MDB_NOOVERWRITE);
+    if (rc == MDB_KEYEXIST)
+	debug_msg("Key: '%.*s' with value: '%.*s' already exists. Skipping..", (int)key.len, (char*)key.s, (int)val.len, (char*)val.s);
+    else
 	MDB_CHECK(rc);
 }
 
-s8*
-getfiles(s8 headw)
+s8
+getfromdb2(s8 key)
 {
     MDB_CHECK(mdb_txn_begin(env, NULL, MDB_RDONLY, &txn));
-    MDB_CHECK(mdb_dbi_open(txn, "head-file", MDB_DUPSORT, &dbi1));
+    MDB_CHECK(mdb_dbi_open(txn, "dbi2", 0, &dbi2)); // TODO: Fix silent error
+
+    MDB_val key_m = (MDB_val) { .mv_data = key.s, .mv_size = (size_t)key.len };
+    MDB_val val_m = { 0 };
+
+    if ((rc = mdb_get(txn, dbi2, &key_m, &val_m)) == MDB_NOTFOUND)
+	return (s8){ 0 }
+    ;
+    MDB_CHECK(rc);
+
+    s8 ret = s8dup((s8){ .s = val_m.mv_data, .len = val_m.mv_size });
+
+    mdb_dbi_close(env, dbi2);
+    mdb_txn_abort(txn);
+    return ret;
+}
+
+s8*
+getfiles(s8 key)
+{
+    MDB_CHECK(mdb_txn_begin(env, NULL, MDB_RDONLY, &txn));
+    MDB_CHECK(mdb_dbi_open(txn, "dbi1", MDB_DUPSORT, &dbi1));
 
     s8* ret = 0;
 
-    MDB_val key_m = (MDB_val) { .mv_data = headw.s, .mv_size = (size_t)headw.len };
+    MDB_val key_m = (MDB_val) { .mv_data = key.s, .mv_size = (size_t)key.len };
     MDB_val val_m = { 0 };
 
     MDB_cursor *cursor = 0;
@@ -106,23 +161,4 @@ getfiles(s8 headw)
     mdb_dbi_close(env, dbi1);
     mdb_txn_abort(txn);
     return ret;
-}
-
-s8
-getreading(s8 fn)
-{
-    MDB_CHECK(mdb_txn_begin(env, NULL, MDB_RDONLY, &txn));
-    MDB_CHECK(mdb_dbi_open(txn, "file-info", MDB_DUPSORT, &dbi2));
-
-    MDB_val key_m = (MDB_val) { .mv_data = fn.s, .mv_size = (size_t)fn.len };
-    MDB_val val_m = { 0 };
-
-    if ((rc = mdb_get(txn, dbi2, &key_m, &val_m)) == MDB_NOTFOUND)
-	return (s8){ 0 }
-    ;
-    MDB_CHECK(rc);
-
-    mdb_dbi_close(env, dbi2);
-    mdb_txn_abort(txn);
-    return s8dup((s8){ .s = val_m.mv_data, .len = val_m.mv_size });
 }
